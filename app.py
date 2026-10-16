@@ -27,8 +27,59 @@ st.info(
 )
 
 @st.cache_resource
+
+@st.cache_resource
 def load_model():
-    return joblib.load(MODEL_PATH)
+    try:
+        return joblib.load(MODEL_PATH)
+    except Exception as exc:
+        st.warning(
+            "The saved model is incompatible with this environment. "
+            "Training a replacement model from the synthetic dataset."
+        )
+
+        from sklearn.ensemble import HistGradientBoostingRegressor
+
+        data_path = os.path.join(
+            DATA_DIR, "processed_training_data.csv"
+        )
+        df = pd.read_csv(data_path)
+
+        feature_columns = [
+            "age", "bmi", "hba1c", "baseline_glucose",
+            "glucose", "glucose_lag_30m", "glucose_lag_60m",
+            "glucose_lag_120m", "glucose_mean_30m",
+            "glucose_mean_60m", "heart_rate", "steps",
+            "sleep_hours", "meal_event", "meal_carbohydrates_g",
+            "hour_sin", "hour_cos"
+        ]
+
+        required = feature_columns + ["target_glucose_2h"]
+        missing = [c for c in required if c not in df.columns]
+
+        if missing:
+            raise ValueError(f"Missing dataset columns: {missing}")
+
+        df = df.dropna(subset=required)
+
+        model = HistGradientBoostingRegressor(
+            max_iter=120,
+            learning_rate=0.08,
+            max_leaf_nodes=31,
+            l2_regularization=1.0,
+            random_state=42
+        )
+
+        model.fit(
+            df[feature_columns],
+            df["target_glucose_2h"]
+        )
+
+        return {
+            "model": model,
+            "feature_columns": feature_columns,
+            "event_threshold": 180
+        }
 
 @st.cache_data
 def load_data():
